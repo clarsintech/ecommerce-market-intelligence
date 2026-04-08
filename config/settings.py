@@ -1,0 +1,1 @@
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///market_intel.db")

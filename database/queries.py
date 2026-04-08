@@ -6,13 +6,13 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from datetime import datetime, timedelta
 
-def get_engine(db_path="market_intel.db"):
-    return create_engine(f"sqlite:///{db_path}")
+# def get_engine(db_path="market_intel.db"):
+#     return create_engine(f"sqlite:///{db_path}")
 
-# def get_engine(db_path=None):
-#     from config.settings import DATABASE_URL
-#     url = f"sqlite:///{db_path}" if db_path else DATABASE_URL
-#     return create_engine(url)
+def get_engine(db_path=None):
+    from config.settings import DATABASE_URL
+    url = f"sqlite:///{db_path}" if db_path else DATABASE_URL
+    return create_engine(url)
 
 def get_session(engine):
     return Session(engine)
