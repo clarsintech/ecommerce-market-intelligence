@@ -27,20 +27,26 @@ def clean_price(price_str):
     return float(price_str)
 
 def clean_rating(rating):
-    if rating == '0':
+    if not rating:
         return 0
-    else:
-        rating = float(rating.split()[0])
-        print(rating)
-        return rating 
+
+    match = re.search(r"[\d.,]+", rating)
+    if match:
+        value = match.group().replace(",", ".")
+        return float(value)
+
+    return 0
 
 def clean_review_count(text):
     if not text:
         return 0
     
-    number = int(text.strip("()").replace(",", ""))
-    
-    return number 
+    match = re.search(r"\d[\d,]*", text)
+    if match:
+        number = match.group().replace(",", "")
+        return int(number)
+
+    return 0
     
 def extract_brand(text: str) -> str:
     if not text:

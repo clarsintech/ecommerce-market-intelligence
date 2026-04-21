@@ -1,13 +1,12 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from database.queries import get_engine, get_session, get_latest_price_all
+from database.queries import get_session, get_latest_price_all
 
 st.set_page_config(page_title="Competitor Analysis", layout="wide")
 st.title("🔍 Competitor Analysis")
 
-engine = get_engine()
-session = get_session(engine)
+session = get_session()
 
 latest = get_latest_price_all(session)
 

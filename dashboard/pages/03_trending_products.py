@@ -1,13 +1,12 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from database.queries import get_engine, get_session, get_products_with_price_drop, get_latest_price_all
+from database.queries import get_session, get_products_with_price_drop, get_latest_price_all
 
 st.set_page_config(page_title="Trending Products", layout="wide")
 st.title("🔥 Trending Products")
 
-engine = get_engine()
-session = get_session(engine)
+session = get_session()
 
 # ─── Produk dengan harga turun ────────────────────────────────────────────────
 st.subheader("Produk yang Harganya Turun Hari Ini")

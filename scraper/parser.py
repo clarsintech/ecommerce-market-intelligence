@@ -1,6 +1,7 @@
 from bs4 import BeautifulSoup
 from scraper.utils import clean_price, parse_bool, extract_brand, clean_rating, clean_review_count
 
+
 def process_html(response):
     
     if response:
@@ -65,10 +66,10 @@ def process_html(response):
     
     rating_element = soup.select_one('#acrPopover')
     rating = rating_element.get('title') if rating_element else 0
-    print(f'Rating: {rating}')
+    # print(f'Rating: {rating}')
     rating = clean_rating(rating)
     
-    review_count_element = soup.select_one('#acrCustomerReviewText span[aria-hidden="true"]')
+    review_count_element = soup.select_one('#acrCustomerReviewText')
     review_count = review_count_element.text if review_count_element else 0
     review_count = clean_review_count(review_count)
     
@@ -88,12 +89,108 @@ def process_html(response):
     
     return res
     
-# res = fetch_html('https://www.amazon.com/dp/B0FG28SG1N/ref=sspa_dk_detail_right_aax_0?psc=1&sp_csd=d2lkZ2V0TmFtZT1zcF9kZXRhaWxfcmlnaHRfc2hhcmVk')
+def process_search_results(response, max_results):
+    if response:
+        soup = BeautifulSoup(response, 'lxml')
+    else:
+        print('gada produk')
+        return
+    
+    # if "Something went wrong" in soup or "sorry" in soup.lower():
+    #     print("Amazon error page detected")
+    #     return []
+    
+    # Mencari div yang merupakan hasil pencarian produk
+    items = soup.find_all('div', {'role': 'listitem'})
 
-# res = fetch_html('https://www.amazon.com/dp/B0FXHB7P7X/')
+    results = []
+    counter = 0
+    for item in items:
+        data = {}
+        # 1. Title Recipe (Div pembungkus judul & toko) -> cek dulu dia produk sponsored atau engga
+        title_recipe = item.find('div', attrs={'data-cy': 'title-recipe'})
+        price_node = item.find('span', class_='a-price')
+        if not price_node:
+            continue
+        if title_recipe:
+            # Seller Name (H2 class a-size-mini)
+            # seller_node = title_recipe.find('div')
+            # data['seller_name'] = seller_node.get_text(strip=True) if seller_node else None
+            
+            # ini skip dulu, lgsg masuk ke product name aja dulu
 
-# res = fetch_html('https://www.amazon.com/gp/aw/d/B0CJ22C9MB/')
+            # Product Name (H2 class a-size-base-plus)
+            # name_node = title_recipe.find('span')
+            if 'Sponsored' in title_recipe.getText(strip=True):
+                continue
+            data['title'] = title_recipe.get_text(strip=True) if title_recipe else None
+            counter+=1
+        
+        
+        # Lewati jika ASIN kosong (biasanya iklan atau spacer)
+        asin = item.get('data-asin')
+        if not asin:
+            continue
 
-# res = fetch_html('https://www.amazon.com/dp/B0CQ4HYRM7/ref=sspa_dk_detail_0?pd_rd_i=B0CQ4HYRM7&pd_rd_w=gRIyF&content-id=amzn1.sym.85ceacba-39b1-4243-8f28-2e014f9512c7&pf_rd_p=85ceacba-39b1-4243-8f28-2e014f9512c7&pf_rd_r=FF5FPQCXCH2DYN5Y19F0&pd_rd_wg=StZmU&pd_rd_r=1e75c12b-4ba2-4f59-a501-7defb088b96a&sp_csd=d2lkZ2V0TmFtZT1zcF9kZXRhaWxfdGhlbWF0aWM&th=1')
+        data['ASIN'] = asin
+
+        # print(item)
+        # 2. Product Image (src dari class s-image)
+        img = item.find('img', class_='s-image')
+        data['image_url'] = img.get('src') if img else None
+
+
+        # 3. Reviews & Ratings
+        review_slot = item.find('i', attrs={'data-cy': 'reviews-ratings-slot'})
+        data['rating'] = 0
+        if review_slot:
+            # Rating (4.5 out of 5 stars)
+            data['rating'] = clean_rating(review_slot.get_text(strip=True)) if review_slot else 0
+
+        review_node = item.find('div', attrs={'data-csa-c-slot-id': 'alf-reviews'})
+        data['review_count'] = 0
+        if review_node:
+            link = review_node.find('a')
+            if link:
+                review_text = link.get('aria-label')
+                # Review => '4,336 ratings'
+                data['review_count'] = clean_review_count(review_text)
+
+        # 4. Prices
+        # Harga Sekarang (a-offscreen)
+        data['price']=0
+        price_node = item.find('span', class_='a-price')
+        if price_node:
+            offscreen = price_node.find('span', class_='a-offscreen')
+            data['price'] = clean_price(offscreen.get_text(strip=True)) if offscreen else None
+
+        original_price_span = item.find('span', class_='a-text-price', attrs={'data-a-size': 'b', 'data-a-strike': 'true'})
+        data['original_price'] = 0
+        if original_price_span:
+            hidden_span = original_price_span.find('span', attrs={'aria-hidden': 'true'})
+            if hidden_span:
+                data['original_price'] = clean_price(hidden_span.get_text(strip=True))
+            else:
+                data['original_price'] = 0
+        else:
+            data['original_price'] = 0
+        
+        data['is_prime'] = False
+        
+        # Prime products
+        prime_node = item.find('div', attrs={'data_cy': 'price_recipe'})
+        if prime_node:
+            if "Exclusive Prime price" in prime_node.get_text():
+                data['is_prime'] = True
+                
+        results.append(data)
+        
+        if counter >= max_results:
+            break
+
+    # Print hasil untuk cek
+    for res in results:
+        print(res)
+    return results
 
 # process_html(res)

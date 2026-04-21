@@ -1,14 +1,13 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from database.queries import get_engine, get_session, get_all_products, get_products_rating_and_review, get_price_history
+from database.queries import get_session, get_all_products, get_products_rating_and_review, get_price_history
 
 st.set_page_config(page_title="Review & Rating Tracker", layout="wide")
 st.title("⭐ Review & Rating Tracker")
 st.caption("Pantau naik turunnya rating dan jumlah review kompetitor")
 
-engine = get_engine()
-session = get_session(engine)
+session = get_session()
 
 products = get_all_products(session)
 

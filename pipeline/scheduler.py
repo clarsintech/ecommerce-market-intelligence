@@ -5,6 +5,7 @@ ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
 if ROOT_DIR not in sys.path:
     sys.path.append(ROOT_DIR)
 
+import asyncio
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -15,13 +16,13 @@ scheduler = BlockingScheduler()
 
 def run_scraper():
     print(f"🚀 Scraper started at {datetime.now()}")
-    process_task()
+    asyncio.run(process_task())
     print(f"✅ Scraper finished at {datetime.now()}")
 
 # Jadwal scraping — setiap hari jam 08:00 pagi
 scheduler.add_job(
     run_scraper,
-    CronTrigger(hour=8, minute=0),
+    CronTrigger(hour="0,12", minute=0, timezone="Asia/Jakarta"),
     # IntervalTrigger(minutes=2),
     id="daily_scrape",
     name="Daily Amazon Scraper",

@@ -1,13 +1,12 @@
 import streamlit as st
 import pandas as pd
-from database.queries import get_engine, get_session, get_price_alerts
+from database.queries import get_session, get_price_alerts
 
 st.set_page_config(page_title="Price Alerts", layout="wide")
 st.title("🚨 Price Alerts")
 st.caption("Produk kompetitor yang harganya turun signifikan")
 
-engine = get_engine()
-session = get_session(engine)
+session = get_session()
 
 # ─── Threshold slider ─────────────────────────────────────────────────────────
 threshold = st.slider(
