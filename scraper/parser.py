@@ -1,196 +1,274 @@
 from bs4 import BeautifulSoup
-from scraper.utils import clean_price, parse_bool, extract_brand, clean_rating, clean_review_count
 
+from utils.scraper_cleaners import (
+    clean_price, 
+    parse_bool, 
+    extract_brand, 
+    clean_rating, 
+    clean_review_count
+)
+
+def make_soup(html):
+    if not html:
+        return None
+
+    return BeautifulSoup(html, 'lxml')
+
+def get_text(element):
+    if not element:
+        return None
+    
+    return element.get_text(strip=True)
+
+def get_attr(element, attr):
+    if not element:
+        return None
+
+    return element.get(attr)
+
+# ─────────────────────────────────────────────
+# Product Detail Parser
+# ─────────────────────────────────────────────
+
+def parse_title(soup):
+    return get_text(soup.select_one('#productTitle'))
+
+def parse_asin(soup):
+    asin_element = soup.select_one('#ASIN')
+    return get_attr(asin_element, "value")
+
+def parse_category(soup):
+    return get_text(soup.select_one('#wayfinding-breadcrumbs_feature_div'))
+
+def parse_image_url(soup):
+    image_element = soup.select_one('#landingImage')
+    return get_attr(image_element, "src")
+
+def parse_stock_status(soup):
+    out_of_stock = soup.select_one("#outOfStock")
+    return out_of_stock is None
+
+def parse_price(soup):
+    selectors = [
+        ".apex-pricetopay-value span[aria-hidden='true']",
+        ".a-price .a-offscreen",
+        "#priceblock_ourprice",
+        "#priceblock_dealprice",
+    ]
+
+    for selector in selectors:
+        price_element = soup.select_one(selector)
+        price_text = get_text(price_element)
+
+        if price_text:
+            return clean_price(price_text)
+
+    return 0
+
+def parse_prime_status(soup):
+    prime_element = soup.select_one("#usePrimeHandler")
+    prime_value = get_attr(prime_element, "value")
+
+    return parse_bool(prime_value)
+
+
+def parse_brand(soup):
+    # Case 1: ambil text dari <a> di dalam premiumBylineInfo_feature_div
+    brand_element = soup.select_one("#premiumBylineInfo_feature_div a")
+
+    if brand_element:
+        return extract_brand(get_text(brand_element))
+
+    # Case 2: fallback ke productOverview_feature_div
+    # row pertama, kolom kedua = tr pertama > td kedua
+    brand_element = soup.select_one(
+        "#productOverview_feature_div table tbody tr:first-child td:nth-child(2)"
+    )
+
+    if brand_element:
+        return extract_brand(get_text(brand_element))
+
+    return None
+
+
+def parse_product_rating(soup):
+    rating_element = soup.select_one("#acrPopover")
+    rating_text = get_attr(rating_element, "title")
+
+    return clean_rating(rating_text)
+
+
+def parse_product_review_count(soup):
+    review_element = soup.select_one("#acrCustomerReviewText")
+    review_text = get_text(review_element)
+
+    return clean_review_count(review_text)
 
 def process_html(response):
-    
-    if response:
-        soup = BeautifulSoup(response, 'lxml')
-    else:
-        print('gada produk')
-        return
-    
-    
-    title_element = soup.select_one('#productTitle')
-    
-    # ✅ Tambahkan ini — kalau title tidak ada, halaman tidak valid
-    if not title_element:
-        print("Halaman tidak valid — bukan product page")
+    soup = make_soup(response)
+
+    if not soup:
         return None
-    title = title_element.text.strip()
-    
-    asin_element = soup.select_one('#ASIN')
-    asin = asin_element.get('value') if asin_element else None
-    
-    category_element = soup.select_one('#wayfinding-breadcrumbs_feature_div')
-    category = category_element.text.strip() if category_element else None
-    
-    image_url_element = soup.select_one('#landingImage')
-    image_url = image_url_element.get('src') if image_url_element else None
-    
-    check_stock_element = soup.select_one('#outOfStock')
-    is_in_stock = True
+
+    title = parse_title(soup)
+
+    if not title:
+        return None
+
+    is_in_stock = parse_stock_status(soup)
+
     price = 0
     original_price = 0
-    is_prime = ''
-    
-    if check_stock_element:
-    
-        is_in_stock = False
-        
-    else:
-        price_element = soup.select_one('.apex-pricetopay-value span[aria-hidden="true"]')
-        price = price_element.text.strip() if price_element else 0
-        price = clean_price(price)
-        
-        original_price_element = soup.select_one('.a-text-price.apex-basisprice-value .a-offscreen')
-        if original_price_element:
-            original_price = original_price_element.text if original_price_element else 0
-            original_price = clean_price(original_price)
-        else: 
-            original_price = price
-        
-    is_prime_element = soup.select_one('#usePrimeHandler')
-    is_prime = is_prime_element.get('value') if is_prime_element else None
-    is_prime = parse_bool(is_prime)
-    
-    brand_element = soup.select_one('#bylineInfo .a-link-normal')
-    
-    if brand_element:
-        brand = brand_element.text if brand_element else None
-    else:
-        brand_element = soup.select_one('#bylineInfo')
-        brand = brand_element.text if brand_element else None
 
-    brand = extract_brand(brand)
-    
-    rating_element = soup.select_one('#acrPopover')
-    rating = rating_element.get('title') if rating_element else 0
-    # print(f'Rating: {rating}')
-    rating = clean_rating(rating)
-    
-    review_count_element = soup.select_one('#acrCustomerReviewText')
-    review_count = review_count_element.text if review_count_element else 0
-    review_count = clean_review_count(review_count)
-    
-    res = {
-        "ASIN": asin,
+    if is_in_stock:
+        price = parse_price(soup)
+        original_price = parse_original_price(soup, price)
+
+        if price <= 0:
+            is_in_stock = False
+
+    return {
+        "ASIN": parse_asin(soup),
         "title": title,
-        "brand": brand,
-        "category": category,
-        "image_url": image_url,
+        "brand": parse_brand(soup),
+        "category": parse_category(soup),
+        "image_url": parse_image_url(soup),
         "price": price,
         "original_price": original_price,
         "is_in_stock": is_in_stock,
-        "is_prime": is_prime,
-        "rating": rating,
-        "review_count": review_count
+        "is_prime": parse_prime_status(soup),
+        "rating": parse_product_rating(soup),
+        "review_count": parse_product_review_count(soup),
     }
     
-    return res
-    
-def process_search_results(response, max_results):
-    if response:
-        soup = BeautifulSoup(response, 'lxml')
-    else:
-        print('gada produk')
-        return
-    
-    # if "Something went wrong" in soup or "sorry" in soup.lower():
-    #     print("Amazon error page detected")
-    #     return []
-    
-    # Mencari div yang merupakan hasil pencarian produk
-    items = soup.find_all('div', {'role': 'listitem'})
+# ─────────────────────────────────────────────
+# Search Result Parser
+# ─────────────────────────────────────────────
 
+def is_sponsored_item(item) -> bool:
+    title_recipe = item.find("div", attrs={"data-cy": "title-recipe"})
+
+    if not title_recipe:
+        return False
+
+    return "Sponsored" in title_recipe.get_text(strip=True)
+
+
+def parse_search_title(item) -> str | None:
+    title_recipe = item.find("div", attrs={"data-cy": "title-recipe"})
+
+    if not title_recipe:
+        return None
+
+    return title_recipe.get_text(strip=True)
+
+
+def parse_search_asin(item) -> str | None:
+    return item.get("data-asin")
+
+
+def parse_search_image(item) -> str | None:
+    image = item.find("img", class_="s-image")
+    return get_attr(image, "src")
+
+
+def parse_search_rating(item) -> float:
+    review_rating_slot = item.find("i", attrs={"data-cy": "reviews-ratings-slot"})
+    rating_text = get_text(review_rating_slot)
+
+    return clean_rating(rating_text)
+
+
+def parse_search_review_count(item) -> int:
+    review_node = item.find("div", attrs={"data-csa-c-slot-id": "alf-reviews"})
+
+    if not review_node:
+        return 0
+
+    link = review_node.find("a")
+    review_text = get_attr(link, "aria-label")
+
+    return clean_review_count(review_text)
+
+
+def parse_search_price(item) -> float:
+    price_node = item.select_one("span.a-price")
+
+    if not price_node:
+        return 0
+
+    offscreen = price_node.select_one("span.a-offscreen")
+    price_text = get_text(offscreen)
+
+    return clean_price(price_text)
+
+
+def parse_original_price(item, current_price) -> float:
+    price_node = item.select_one('#corePriceDisplay_desktop_feature_div')
+
+    original_price_node = price_node.find(
+        "span",
+        class_="a-text-price",
+        attrs={
+            "data-a-strike": "true",
+        },
+    )
+
+    if not original_price_node:
+        return current_price
+
+    hidden_span = original_price_node.find("span", attrs={"aria-hidden": "true"})
+    price_text = get_text(hidden_span)
+
+    return clean_price(price_text)
+
+
+def parse_search_prime_status(item) -> bool:
+    prime_recipe = item.find("div", attrs={"data-cy": "price-recipe"})
+
+    if not prime_recipe:
+        return False
+
+    return "Prime" in prime_recipe.get_text(strip=True)
+
+
+def parse_search_item(item) -> dict | None:
+    if is_sponsored_item(item):
+        return None
+    asin = parse_search_asin(item)
+    title = parse_search_title(item)
+    price = parse_search_price(item)
+
+    if not asin or not title or price <= 0:
+        return None
+    return {
+        "ASIN": asin,
+        "title": title,
+        "image_url": parse_search_image(item),
+        "rating": parse_search_rating(item),
+        "review_count": parse_search_review_count(item),
+        "price": price,
+        "is_prime": parse_search_prime_status(item),
+    }
+
+
+def process_search_results(response: str | None, max_results: int) -> list[dict]:
+    soup = make_soup(response)
+
+    if not soup:
+        return []
+
+    items = soup.find_all("div", {"role": "listitem"})
     results = []
-    counter = 0
+
     for item in items:
-        data = {}
-        # 1. Title Recipe (Div pembungkus judul & toko) -> cek dulu dia produk sponsored atau engga
-        title_recipe = item.find('div', attrs={'data-cy': 'title-recipe'})
-        price_node = item.find('span', class_='a-price')
-        if not price_node:
-            continue
-        if title_recipe:
-            # Seller Name (H2 class a-size-mini)
-            # seller_node = title_recipe.find('div')
-            # data['seller_name'] = seller_node.get_text(strip=True) if seller_node else None
-            
-            # ini skip dulu, lgsg masuk ke product name aja dulu
+        product = parse_search_item(item)
 
-            # Product Name (H2 class a-size-base-plus)
-            # name_node = title_recipe.find('span')
-            if 'Sponsored' in title_recipe.getText(strip=True):
-                continue
-            data['title'] = title_recipe.get_text(strip=True) if title_recipe else None
-            counter+=1
-        
-        
-        # Lewati jika ASIN kosong (biasanya iklan atau spacer)
-        asin = item.get('data-asin')
-        if not asin:
+        if not product:
             continue
 
-        data['ASIN'] = asin
-
-        # print(item)
-        # 2. Product Image (src dari class s-image)
-        img = item.find('img', class_='s-image')
-        data['image_url'] = img.get('src') if img else None
-
-
-        # 3. Reviews & Ratings
-        review_slot = item.find('i', attrs={'data-cy': 'reviews-ratings-slot'})
-        data['rating'] = 0
-        if review_slot:
-            # Rating (4.5 out of 5 stars)
-            data['rating'] = clean_rating(review_slot.get_text(strip=True)) if review_slot else 0
-
-        review_node = item.find('div', attrs={'data-csa-c-slot-id': 'alf-reviews'})
-        data['review_count'] = 0
-        if review_node:
-            link = review_node.find('a')
-            if link:
-                review_text = link.get('aria-label')
-                # Review => '4,336 ratings'
-                data['review_count'] = clean_review_count(review_text)
-
-        # 4. Prices
-        # Harga Sekarang (a-offscreen)
-        data['price']=0
-        price_node = item.find('span', class_='a-price')
-        if price_node:
-            offscreen = price_node.find('span', class_='a-offscreen')
-            data['price'] = clean_price(offscreen.get_text(strip=True)) if offscreen else None
-
-        original_price_span = item.find('span', class_='a-text-price', attrs={'data-a-size': 'b', 'data-a-strike': 'true'})
-        data['original_price'] = 0
-        if original_price_span:
-            hidden_span = original_price_span.find('span', attrs={'aria-hidden': 'true'})
-            if hidden_span:
-                data['original_price'] = clean_price(hidden_span.get_text(strip=True))
-            else:
-                data['original_price'] = 0
-        else:
-            data['original_price'] = 0
-        
-        data['is_prime'] = False
-        
-        # Prime products
-        prime_node = item.find('div', attrs={'data_cy': 'price_recipe'})
-        if prime_node:
-            if "Exclusive Prime price" in prime_node.get_text():
-                data['is_prime'] = True
-                
-        results.append(data)
-        
-        if counter >= max_results:
+        results.append(product)
+        if len(results) >= max_results:
             break
 
-    # Print hasil untuk cek
-    for res in results:
-        print(res)
     return results
-
-# process_html(res)

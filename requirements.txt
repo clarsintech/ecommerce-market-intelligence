@@ -1,0 +1,10 @@
+streamlit
+sqlalchemy
+psycopg2-binary
+playwright
+pandas
+plotly
+python-dotenv
+beautifulsoup4
+lxml
+playwright-stealth

@@ -1,135 +1,105 @@
 import streamlit as st
-import pandas as pd
 import plotly.express as px
-from database.queries import get_session, get_all_products, get_all_keywords
+
+from services.data_loader import load_products, load_keywords
+from utils.product_utils import get_keyword_options, filter_by_keyword
+from utils.dataframe_builders import build_competitor_dataframe, build_display_table
 
 st.set_page_config(page_title="Competitor Analysis", layout="wide")
 st.title("📊 Competitor Analysis")
 
-session = get_session()
+# ─────────────────────────────────────────────
+# Load Data
+# ─────────────────────────────────────────────
 
-products_grouping = get_all_products(session)
-keywords = get_all_keywords(session)
+products = load_products()
+keywords = load_keywords()
 
-keyword_list = []
-filtered_products = []
+if not products:
+    st.warning("There's no data. Search products first.")
+    st.stop()
 
-for i in keywords:
-    keyword_list.append(i.name)
-keyword_list.append('All')
+# ─────────────────────────────────────────────
+# Filter
+# ─────────────────────────────────────────────
 
 selected_keyword = st.selectbox(
     "Filter by Keyword Group",
-    keyword_list
+    get_keyword_options(keywords)
 )
 
-if selected_keyword == "All":
-    filtered_products = products_grouping
-else:
-    filtered_products = [
-        p for p in products_grouping if p["name"] == selected_keyword
-    ]
-    filtered_products.sort(key=lambda x: x["price"])
+filtered_products = filter_by_keyword(products, selected_keyword)
 
+if not filtered_products:
+    st.info("No products found for this keyword group.")
 
-if not products_grouping:
-    st.warning("Belum ada data.")
-    st.stop()
+df = build_competitor_dataframe(filtered_products)
 
-rows = []
-for product in filtered_products:
-    change_text = '-'
-    if product.change < 0:
-        # Harga Turun
-        change_text = f"↓ ${abs(product.change):.2f}"
-    elif product.change > 0:
-        # Harga Naik
-        change_text = f"↑ ${product.change:.2f}"
-    rows.append({
-        "Product": product.title[:50],
-        "Brand": product.brand or "Unknown",
-        "Price": product.price,
-        "Change": change_text,
-        "Discount": product.discount_pct or 0,
-        "Review Count": product.review_count
-        # "Prime": "Prime" if snapshot.is_prime else "Non-Prime",
-        # "Stok": "Ada" if snapshot.is_in_stock else "Habis",
-    })
-    
+# ─────────────────────────────────────────────
+# Price Comparison Chart
+# ─────────────────────────────────────────────
+price_df = df.sort_values("Price", ascending=True)
 
-df = pd.DataFrame(rows)
-
-# ─── Bar chart perbandingan harga ────────────────────────────────────────────
-st.subheader("📊 Price Comparison (Chart)")
-
-fig = px.bar(
-    df.sort_values("Price"),
-    x="Price", y="Product",
+fig_price = px.bar(
+    price_df,
+    x="Price",
+    y="Product",
     orientation="h",
-    # color="Prime",
-    # color_discrete_map={"Prime": "#FF9900", "Non-Prime": "#232F3E"},
     title="Newest Price — sorted by lowest price",
 )
-fig.update_layout(
+
+fig_price.update_layout(
     plot_bgcolor="rgba(0,0,0,0)",
     paper_bgcolor="rgba(0,0,0,0)",
     xaxis_tickprefix="$",
+    yaxis={"categoryorder": "total ascending"},
 )
-st.plotly_chart(fig, width="stretch")
 
-# ─── Scatter plot harga vs diskon ────────────────────────────────────────────
+st.plotly_chart(fig_price, width="stretch")
+
+
+# ─────────────────────────────────────────────
+# Discount Scatter Chart
+# ─────────────────────────────────────────────
+
 st.subheader("🔥 Discount Comparison")
 
-# --- Tambahin kategori (biar meaningful) ---
-def get_category(row):
-    if row['Discount'] >= 30:
-        return "🔥 Best Deal"
-    elif row['Price'] <= df["Price"].median():
-        return "💰 Budget"
-    else:
-        return "Normal"
-
-df["Category"] = df.apply(get_category, axis=1)
-
-# --- Scatter Plot ---
-fig2 = px.scatter(
+fig_discount = px.scatter(
     df,
     x="Price",
     y="Discount",
     text="Brand",
     color="Category",
-    size="Review Count",  # pastikan ada column ini
+    size="Review Count",
     size_max=25,
     hover_data={
-        "Price": True,
-        "Discount": True,
+        "Product": True,
         "Brand": True,
+        "Price": ":.2f",
+        "Discount": ":.2f",
         "Review Count": True,
     },
-    title="👉 Right = More Expensive | Up = Higher Discount",
+    title="Right = More Expensive | Up = Higher Discount",
 )
 
-# --- Position text ---
-fig2.update_traces(textposition="top center")
+fig_discount.update_traces(textposition="top center")
 
-# --- Tambahin garis average ---
 avg_price = df["Price"].mean()
 avg_discount = df["Discount"].mean()
 
-fig2.add_vline(
+fig_discount.add_vline(
     x=avg_price,
     line_dash="dash",
-    line_color="gray"
+    line_color="gray",
 )
 
-fig2.add_hline(
+fig_discount.add_hline(
     y=avg_discount,
     line_dash="dash",
-    line_color="gray"
+    line_color="gray",
 )
 
-# --- Styling ---
-fig2.update_layout(
+fig_discount.update_layout(
     plot_bgcolor="rgba(0,0,0,0)",
     paper_bgcolor="rgba(0,0,0,0)",
     xaxis_tickprefix="$",
@@ -137,15 +107,19 @@ fig2.update_layout(
     legend_title="Category",
 )
 
-st.plotly_chart(fig2, width="stretch")
+st.plotly_chart(fig_discount, width="stretch")
 
-# ─── Tabel lengkap ───────────────────────────────────────────────────────────
-st.subheader("Tabel Lengkap")
-df_table = df
-df_table['Price'] = '$' + df_table['Price'].astype(str)
-df_table['Discount'] = df_table['Discount'].apply(
-    lambda x: f"{x}%" if x > 0 else "-"
+
+# ─────────────────────────────────────────────
+# Full Table
+# ─────────────────────────────────────────────
+
+st.subheader("Complete Table")
+
+display_df = build_display_table(df)
+
+st.dataframe(
+    display_df,
+    width="stretch",
+    hide_index=True,
 )
-st.dataframe(df_table, width="stretch", hide_index=True)
-
-session.close()

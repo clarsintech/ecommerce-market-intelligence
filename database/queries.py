@@ -22,15 +22,9 @@ SessionLocal = sessionmaker(
     bind=engine,
     autoflush=False  # 🔥 matikan autoflush global
 )
-# 🔥 helper ambil session
+# 🔥 helper ambil session 
 def get_session():
     return SessionLocal()
-
-# def get_engine(db_path="market_intel.db"):
-#     return create_engine(f"sqlite:///{db_path}")
-
-# def get_session(engine):
-#     return Session(engine)
 
 def get_session_with_retry(retries=3):
     for i in range(retries):
@@ -112,11 +106,8 @@ def insert_product(session, asin, title, brand, category, image_url):
         print(f'Error insert_product: {e}')
         return None
 
-def get_all_products(session):
-    # tampilkan semua produk di tabel
-    all_products = []
-
-    subq = (
+def get_latest_products(session):
+    latest_snapshot = (
         select(
             PriceSnapshot.product_id,
             PriceSnapshot.price,
@@ -124,94 +115,60 @@ def get_all_products(session):
             PriceSnapshot.discount_pct,
             PriceSnapshot.is_in_stock,
             PriceSnapshot.review_count,
+            PriceSnapshot.rating,
             func.lag(PriceSnapshot.price)
             .over(
                 partition_by=PriceSnapshot.product_id,
-                order_by=PriceSnapshot.scraped_at.asc()
+                order_by=PriceSnapshot.scraped_at.asc(),
             )
-            .label('prev_price')
+            .label("prev_price"),
+            func.row_number()
+            .over(
+                partition_by=PriceSnapshot.product_id,
+                order_by=PriceSnapshot.scraped_at.desc(),
+            )
+            .label("rn"),
         )
     ).subquery()
 
-    # coalesce(prev_price, price) artinya jika prev_price NULL, pakai harga sekarang (selisih jadi 0)
-    change = (subq.c.price - func.coalesce(subq.c.prev_price, subq.c.price)).label("change")
+    keyword_subq = (
+        select(
+            ProductKeyword.product_id.label("product_id"),
+            func.min(Keyword.name).label("keyword_name"),
+        )
+        .join(Keyword, Keyword.id == ProductKeyword.keyword_id)
+        .group_by(ProductKeyword.product_id)
+        .subquery()
+    )
+
+    change = (
+        latest_snapshot.c.price
+        - func.coalesce(latest_snapshot.c.prev_price, latest_snapshot.c.price)
+    ).label("change")
 
     stmt = (
         select(
+            Product.id.label("product_id"),
             Product.asin,
             Product.title,
             Product.brand,
             Product.image_url,
-            subq.c.price,
+            latest_snapshot.c.price,
+            latest_snapshot.c.prev_price,
             change,
-            subq.c.discount_pct,
-            subq.c.scraped_at,
-            subq.c.review_count,
-            Keyword.name
+            latest_snapshot.c.discount_pct,
+            latest_snapshot.c.scraped_at,
+            latest_snapshot.c.is_in_stock,
+            latest_snapshot.c.review_count,
+            latest_snapshot.c.rating,
+            keyword_subq.c.keyword_name,
         )
-        
-        .join(subq, Product.id == subq.c.product_id)
-        .join(ProductKeyword, Product.id == ProductKeyword.product_id)
-        .join(Keyword, Keyword.id == ProductKeyword.keyword_id)
-        .distinct(Product.asin)
-        .order_by(Product.asin, desc(subq.c.scraped_at))
+        .join(latest_snapshot, Product.id == latest_snapshot.c.product_id)
+        .outerjoin(keyword_subq, keyword_subq.c.product_id == Product.id)
+        .where(latest_snapshot.c.rn == 1)
+        .order_by(desc(latest_snapshot.c.scraped_at))
     )
-    
-    all_products = session.execute(stmt).mappings().all()
 
-    return all_products
-
-def get_all_products_with_grouping(session, keyword=None):
-    stmt = ''
-    if not keyword:
-    
-        stmt = (
-        select(
-            Product.asin.label("product_asin"),
-            Product.title,
-            Product.brand,
-            PriceSnapshot.price,
-            PriceSnapshot.discount_pct,
-            Keyword.name.label("keyword_name")
-        )
-        # 1. Tentukan kolom mana yang harus unik (tidak boleh duplikat ASIN)
-        .distinct(Product.asin) 
-        
-        .join(PriceSnapshot, Product.id == PriceSnapshot.product_id)
-        .join(ProductKeyword, Product.id == ProductKeyword.product_id)
-        .join(Keyword, Keyword.id == ProductKeyword.keyword_id)
-        
-        # 2. WAJIB: Order by kolom distinct dulu, baru kolom pengurutnya
-        .order_by(
-            Product.asin, 
-            desc(PriceSnapshot.scraped_at)
-        )
-        )
-    
-    else:
-        stmt = (
-        select(
-            Product.asin.label("product_asin"),
-            Product.title,
-            PriceSnapshot.price,
-            PriceSnapshot.discount_pct,
-            Keyword.name.label("keyword_name")
-        )
-        # 1. Tentukan kolom mana yang harus unik (tidak boleh duplikat ASIN)
-        .distinct(Product.asin) 
-        
-        .join(PriceSnapshot, Product.id == PriceSnapshot.product_id)
-        .join(ProductKeyword, Product.id == ProductKeyword.product_id)
-        .join(Keyword, Keyword.id == ProductKeyword.keyword_id)
-        .where(Keyword.name == keyword)
-        
-        # 2. WAJIB: Order by kolom distinct dulu, baru kolom pengurutnya
-        .order_by(
-            Product.asin, 
-            desc(PriceSnapshot.scraped_at)
-        )
-        )
-    
     return session.execute(stmt).mappings().all()
 
 def get_all_asins(session):
@@ -244,87 +201,34 @@ def insert_price_snapshot(session, product_id, price, original_price, is_prime, 
         return None
                    
     return price_snapshot
-    
+
 def get_price_history(session, product_asin):
     # bikin chart harga naik turun
     try:
         stmt = (
-            select(PriceSnapshot)
+            select(
+                PriceSnapshot.product_id,
+                PriceSnapshot.price,
+                PriceSnapshot.original_price,
+                PriceSnapshot.discount_pct,
+                PriceSnapshot.is_prime,
+                PriceSnapshot.is_in_stock,
+                PriceSnapshot.rating,
+                PriceSnapshot.review_count,
+                PriceSnapshot.scraped_at
+            )
             .join(Product, Product.id == PriceSnapshot.product_id)
             .where(Product.asin == product_asin)
             .order_by(PriceSnapshot.scraped_at.asc())
         )
         
         # scalars() digunakan untuk mengambil objek PriceSnapshot utuh
-        price_histories = session.scalars(stmt).all()
+        price_histories = session.execute(stmt).mappings().all()
         
         return price_histories
     except Exception as e:
         print(f"Error pada query: {e}")
         return []
-
-def get_latest_price_all(session):
-    # harga terbaru semua produk sekaligus
-    subq = (
-        select(
-            PriceSnapshot.product_id,
-            func.max(
-                PriceSnapshot.scraped_at
-            ).label("latest_date")
-        )
-        .group_by(PriceSnapshot.product_id)
-        .subquery()
-    )
-
-    stmt = (
-        select(Product, PriceSnapshot)
-        .join(PriceSnapshot, Product.id == PriceSnapshot.product_id)
-        .join(subq, (PriceSnapshot.product_id == subq.c.product_id) & (PriceSnapshot.scraped_at == subq.c.latest_date))
-    )
-
-    latest_prices = session.execute(stmt).all()
-
-    return latest_prices
-
-def get_products_rating_and_review(session, product_id):
-    
-    result = session.execute(select(PriceSnapshot.rating, PriceSnapshot.review_count, PriceSnapshot.scraped_at).where(PriceSnapshot.product_id == product_id).order_by(PriceSnapshot.scraped_at.asc())).all()
-    
-    return result
-
-def get_products_with_price_drop(session):
-    # deteksi produk yang harganya turun hari ini
-    
-    # lag() untuk dapat data sebelumnya, jadi pakai asc 
-
-    stmt = (
-        select(
-            PriceSnapshot.product_id,
-            PriceSnapshot.price,
-            PriceSnapshot.scraped_at,
-            func.lag(PriceSnapshot.price)
-            .over(
-                partition_by=PriceSnapshot.product_id,
-                order_by=PriceSnapshot.scraped_at.asc()
-            )
-            .label("prev_price")
-        )
-    )
-
-    subq = stmt.subquery()
-    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    tomorrow = today_start + timedelta(days=1)
-
-    final = (
-        select(subq)
-        .where(subq.c.prev_price.isnot(None))
-        .where(subq.c.scraped_at >= today_start)
-        .where(subq.c.scraped_at < tomorrow)
-    )
-
-    result = session.execute(final).all()
-
-    return result
 
 def get_biggest_product_discount(session):
     ranked = (
@@ -374,9 +278,15 @@ def get_price_drop_products(session):
             func.lag(PriceSnapshot.price)
             .over(
                 partition_by=PriceSnapshot.product_id,
-                order_by=PriceSnapshot.scraped_at.asc()
+                order_by=PriceSnapshot.scraped_at.asc(),
             )
-            .label("prev_price")
+            .label("prev_price"),
+            func.row_number()
+            .over(
+                partition_by=PriceSnapshot.product_id,
+                order_by=PriceSnapshot.scraped_at.desc(),
+            )
+            .label("rn"),
         )
     ).subquery()
 
@@ -396,6 +306,8 @@ def get_price_drop_products(session):
         .join(ProductKeyword, Product.id == ProductKeyword.product_id)
         .join(Keyword, ProductKeyword.keyword_id == Keyword.id)
         
+        .where(ranked.c.rn == 1)
+        .where(ranked.c.is_in_stock.is_(True))
         .where(ranked.c.prev_price.isnot(None))
         .where(ranked.c.prev_price > 0)
         .where(ranked.c.price != ranked.c.prev_price)
@@ -406,44 +318,8 @@ def get_price_drop_products(session):
     )
 
     return session.execute(stmt).mappings().all()
-    
-def get_price_alerts(session, threshold_pct=5.0):
-    """
-    Ambil produk yang harganya turun lebih dari threshold_pct
-    dibanding snapshot sebelumnya.
-    """
-    # Subquery: ambil 2 snapshot terakhir per produk
-    ranked = (
-        select(
-            PriceSnapshot.product_id,
-            PriceSnapshot.price,
-            PriceSnapshot.scraped_at,
-            func.lag(PriceSnapshot.price)
-            .over(
-                partition_by=PriceSnapshot.product_id,
-                order_by=PriceSnapshot.scraped_at.asc()
-            )
-            .label("prev_price")
-        )
-    ).subquery()
-
-    # Filter yang harganya turun melebihi threshold
-    stmt = (
-        select(ranked, Product.title, Product.asin, Product.brand)
-        .join(Product, Product.id == ranked.c.product_id)
-        .where(ranked.c.prev_price.isnot(None))
-        .where(ranked.c.prev_price > 0)
-        .where(
-            ((ranked.c.prev_price - ranked.c.price) / ranked.c.prev_price * 100)
-            >= threshold_pct
-        )
-        .order_by(ranked.c.scraped_at.desc())
-    )
-
-    return session.execute(stmt).all()
 
 #------------------- Scraping Queries
-
 def start_scraping_log(session):
     try:
         log = ScrapingLog(
@@ -460,7 +336,6 @@ def start_scraping_log(session):
         print(f'start_scraping_log error: {e}')
         return None
         
-
 def finish_scraping_log(session, log_id, products_scraped, products_failed, error_message=None):
     log = session.get(ScrapingLog, log_id) 
     if log:
@@ -538,7 +413,6 @@ def get_last_scraped_at():
     return result
 
 #-------------------- Keyword Grouping Queries
-
 def get_all_keywords(session):
     stmt = select(Keyword)
     keywords = session.scalars(stmt).all()

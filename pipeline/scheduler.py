@@ -1,37 +1,35 @@
-import sys
-import os
-
-ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
-if ROOT_DIR not in sys.path:
-    sys.path.append(ROOT_DIR)
-
 import asyncio
-from apscheduler.schedulers.blocking import BlockingScheduler
-from apscheduler.triggers.cron import CronTrigger
-from apscheduler.triggers.interval import IntervalTrigger
-from pipeline.tasks import process_task
+import sys
 from datetime import datetime
+
+from apscheduler.triggers.cron import CronTrigger
+from apscheduler.schedulers.blocking import BlockingScheduler
+
+from pipeline.tasks import process_task
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 scheduler = BlockingScheduler()
 
 def run_scraper():
     print(f"🚀 Scraper started at {datetime.now()}")
-    asyncio.run(process_task())
+    
+    scraped_count = asyncio.run(process_task())
+    
     print(f"✅ Scraper finished at {datetime.now()}")
+    print(f"📦 Products scraped: {scraped_count}")
 
-# Jadwal scraping — setiap hari jam 08:00 pagi
 scheduler.add_job(
     run_scraper,
     CronTrigger(hour="0,12", minute=0, timezone="Asia/Jakarta"),
-    # IntervalTrigger(minutes=2),
-    id="daily_scrape",
-    name="Daily Amazon Scraper",
+    id="amazon_price_scraper",
+    name="Amazon Price Scraper",
     replace_existing=True,
 )
 
 if __name__ == "__main__":
-    print("⏰ Scheduler started — scraper akan jalan tiap hari jam 08:00")
-    print("   Tekan Ctrl+C untuk stop")
+    print("⏰ Scheduler started — scraper runs daily at 00:00 and 12:00 WIB")
     
     try:
         scheduler.start()

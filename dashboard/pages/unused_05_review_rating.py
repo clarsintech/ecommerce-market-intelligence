@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from database.queries import get_session, get_all_products, get_products_rating_and_review, get_price_history
+from database.queries import get_session, get_latest_products, get_products_rating_and_review, get_price_history
 
 st.set_page_config(page_title="Review & Rating Tracker", layout="wide")
 st.title("⭐ Review & Rating Tracker")
@@ -9,7 +9,7 @@ st.caption("Pantau naik turunnya rating dan jumlah review kompetitor")
 
 session = get_session()
 
-products = get_all_products(session)
+products = get_latest_products(session)
 
 if not products:
     st.warning("Belum ada data. Jalankan scraper dulu.")

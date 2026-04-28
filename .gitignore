@@ -1,3 +1,5 @@
 .env
-market_intel.db
 __pycache__/
+venv311/
+*.pyc
+*.db
