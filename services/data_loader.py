@@ -6,7 +6,9 @@ from database.queries import (
     get_all_keywords, 
     get_price_drop_products, 
     get_biggest_product_discount, 
-    get_price_history)
+    get_price_history,
+    get_last_scraped_at    
+)
 
 def run_query(fn):
     session = get_session()
@@ -44,9 +46,19 @@ def load_discount():
 
 @st.cache_data(ttl=600)
 def load_price_history(asin):
+    
     session = get_session()
     try:
         price_histories = get_price_history(session, asin)
         return [dict(row) for row in price_histories]
     finally:
         session.close()
+        
+@st.cache_data(ttl=600)
+def load_latest_scraping_log():
+    log = run_query(get_last_scraped_at)
+    
+    if not log:
+        return None
+
+    return dict(log)

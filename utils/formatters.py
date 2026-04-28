@@ -36,3 +36,10 @@ def format_rating(product):
     prime_badge = "🟡 **Prime**" if is_prime else ""
 
     return f"{stars} {rating} | {reviews} reviews | {prime_badge}"
+
+
+def format_datetime(value):
+    if not value:
+        return "-"
+
+    return value.strftime("%d %b %Y, %H:%M")

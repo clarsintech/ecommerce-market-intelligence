@@ -403,13 +403,17 @@ def save_scraped_product(session, asin, title, price, original_price, brand, cat
 
     return price_snapshot
 
-def get_last_scraped_at():
-    session = get_session()
+def get_last_scraped_at(session):
     stmt = (
-        select(func.date_trunc('second', ScrapingLog.started_at)).order_by(ScrapingLog.started_at.desc()).limit(1)
+        select(
+            ScrapingLog.status,
+            ScrapingLog.finished_at,
+            ScrapingLog.products_scraped,
+            ScrapingLog.products_failed,
+        ).order_by(ScrapingLog.finished_at.desc()).limit(1)
+        
     )
-    result = session.execute(stmt).scalar()
-    session.close()
+    result = session.execute(stmt).mappings().first()
     return result
 
 #-------------------- Keyword Grouping Queries
