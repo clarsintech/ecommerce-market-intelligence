@@ -1,0 +1,14 @@
+name: Test Cron
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Print time
+        run: date
