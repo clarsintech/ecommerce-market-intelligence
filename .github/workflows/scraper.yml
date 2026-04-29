@@ -2,7 +2,7 @@ name: Amazon Price Scraper
 
 on:
   schedule:
-    - cron: "0 0,12 * * *"   # 00:00 & 12:00 UTC
+    - cron: "*/15 * * * *"   # 00:00 & 12:00 UTC
   workflow_dispatch:
 
 jobs:

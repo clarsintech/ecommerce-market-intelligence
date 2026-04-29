@@ -17,30 +17,10 @@ from services.data_loader import (
     load_price_drop,
     load_products,
 )
-from pipeline.tasks import process_task
 
 st.set_page_config(page_title="Dashboard", layout="wide")
 st.title("🔍 Dashboard")
 
-# ─────────────────────────────────────────────
-# Actions
-# ─────────────────────────────────────────────
-
-# with st.sidebar:
-#     st.subheader("Actions")
-
-#     scrape_clicked = st.button("Get New Price", type="primary")
-
-#     if scrape_clicked:
-#         with st.spinner("Updating product prices..."):
-#             results = asyncio.run(process_task())
-
-#         if not results:
-#             st.error("No products to scrape.")
-#             st.stop()
-
-#         st.success(f"Finished scraping {results} product prices.")
-#         st.cache_data.clear()
 
 # ─────────────────────────────────────────────
 # Load Data
