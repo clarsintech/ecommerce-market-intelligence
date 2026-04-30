@@ -84,12 +84,17 @@ def render_product_card(product):
     is_saved = asin in st.session_state.saved_asins
 
     col_check, col_img, col_info, col_price = st.columns([0.4, 1, 3, 1.5])
+    
 
     with col_check:
+        checkbox_key = f'check_{asin}'
+    
+        if checkbox_key not in st.session_state:
+            st.session_state[checkbox_key] = asin in st.session_state.selected_asins
+            
         st.checkbox(
             "Select",
-            key=f"check_{asin}",
-            value=asin in st.session_state.selected_asins,
+            key=checkbox_key,
             on_change=toggle_asin,
             args=(asin,),
             disabled=is_saved,
@@ -232,14 +237,15 @@ if results:
     render_search_results(results)
 
     if st.button("➕ Add to Watchlist!", type="primary", use_container_width=True):
-        if not st.session_state.selected_asins:
-            st.warning("Please select at least 1 product.")
+        final_asins = [
+            asin for asin in st.session_state.selected_asins
+            if asin not in st.session_state.saved_asins
+        ]
+        
+        if not final_asins:
+            st.warning('Please select at least 1 new product.')
         else:
             with st.spinner("Saving to database..."):
-                final_asins = [
-                    asin for asin in st.session_state.selected_asins
-                    if asin not in st.session_state.saved_asins
-                ]
                 keyword_to_save = st.session_state.search_keyword
 
                 success_count = asyncio.run(

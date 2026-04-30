@@ -240,5 +240,3 @@ def fetch_with_retry(url, retries=3):
         time.sleep(2)
 
     return None
-
-asyncio.run(process_task())
