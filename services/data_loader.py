@@ -20,6 +20,10 @@ def run_query(fn):
 @st.cache_data(ttl=600)
 def load_products():
     products = run_query(get_latest_products)
+    
+    if not products:
+        return None
+    
     return [dict(row) for row in products]
 
 
@@ -37,11 +41,19 @@ def load_keywords():
 @st.cache_data(ttl=600)
 def load_price_drop():
     products = run_query(get_price_drop_products)
+    
+    if not products:
+        return None
+    
     return [dict(row) for row in products]
 
 @st.cache_data(ttl=600)
 def load_discount():
     product = run_query(get_biggest_product_discount)
+    
+    if not product:
+        return None
+    
     return dict(product)
 
 @st.cache_data(ttl=600)

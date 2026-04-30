@@ -58,6 +58,8 @@ def parse_price(soup):
 
     for selector in selectors:
         price_element = soup.select_one(selector)
+        if not price_element:
+            return 0
         price_text = get_text(price_element)
 
         if price_text:

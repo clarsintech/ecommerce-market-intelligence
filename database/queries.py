@@ -244,6 +244,7 @@ def get_biggest_product_discount(session):
             )
             .label("prev_price")
         )
+        .where(PriceSnapshot.is_in_stock == True)
     ).subquery()
 
     price_diff = (ranked.c.price - ranked.c.prev_price).label("discount")
@@ -264,7 +265,8 @@ def get_biggest_product_discount(session):
     )
 
     result = session.execute(stmt).mappings().first()
-    
+    print('Result >> ')
+    print(result)
     return result
 
 def get_price_drop_products(session):
